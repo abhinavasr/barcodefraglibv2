@@ -17,7 +17,6 @@
 package com.google.zxing.client.android;
 
 import java.io.ByteArrayOutputStream;
-import java.util.Hashtable;
 import java.util.Map;
 
 import android.graphics.Bitmap;
@@ -29,24 +28,13 @@ import android.util.Log;
 
 import com.abhi.barcode.frag.libv2.BarcodeFragment;
 import com.abhi.barcode.frag.libv2.IDS;
-import com.google.zxing.BarcodeFormat;
 import com.google.zxing.BinaryBitmap;
-import com.google.zxing.ChecksumException;
 import com.google.zxing.DecodeHintType;
-import com.google.zxing.FormatException;
 import com.google.zxing.MultiFormatReader;
-import com.google.zxing.NotFoundException;
 import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.ReaderException;
 import com.google.zxing.Result;
-import com.google.zxing.ResultMetadataType;
-import com.google.zxing.ResultPoint;
-import com.google.zxing.common.BitMatrix;
-import com.google.zxing.common.DecoderResult;
-import com.google.zxing.common.DetectorResult;
 import com.google.zxing.common.HybridBinarizer;
-import com.google.zxing.qrcode.decoder.Decoder;
-import com.google.zxing.qrcode.detector.Detector;
 
 final class DecodeHandler extends Handler {
 
@@ -55,15 +43,11 @@ final class DecodeHandler extends Handler {
   private final BarcodeFragment activity;
   private final MultiFormatReader multiFormatReader;
   private boolean running = true;
-  private final Decoder decoder;
-  private final Map<DecodeHintType,Object> _hints;
 
   DecodeHandler(BarcodeFragment activity, Map<DecodeHintType,Object> hints) {
     multiFormatReader = new MultiFormatReader();
     multiFormatReader.setHints(hints);
-    this._hints = hints;
     this.activity = activity;
-    this.decoder = new Decoder();
   }
 
   @Override
@@ -91,40 +75,29 @@ final class DecodeHandler extends Handler {
    * @param height The height of the preview frame.
    */
   private void decode(byte[] data, int width, int height) {
-    final long startTime = System.currentTimeMillis();
-    Result result = null;
+    long start = System.currentTimeMillis();
+    Result rawResult = null;
     PlanarYUVLuminanceSource source = activity.getCameraManager().buildLuminanceSource(data, width, height);
     if (source != null) {
       BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
       try {
-        result = decode(bitmap);
-        //result = getResultFromBinaryBitmap(bitmap);
+        rawResult = multiFormatReader.decodeWithState(bitmap);
       } catch (ReaderException re) {
         // continue
       } finally {
         multiFormatReader.reset();
       }
     }
-    sendMessage(result, source, startTime);
-  }
 
-  private Result getResultFromBinaryBitmap(BinaryBitmap bitmap) throws NotFoundException, FormatException {
-    BitMatrix bitMatrix = bitmap.getBlackMatrix();
-    Detector detector = new Detector(bitMatrix);
-    detector.detect().getBits();
-    return multiFormatReader.decodeWithState(bitmap);
-  }
-
-  private void sendMessage(Result result, PlanarYUVLuminanceSource source, long startTime) {
     Handler handler = activity.getHandler();
-    if (result != null) {
+    if (rawResult != null) {
       // Don't log the barcode contents for security.
-      long endTime = System.currentTimeMillis();
-      Log.d(TAG, "Found barcode in " + (endTime - startTime) + " ms");
+      long end = System.currentTimeMillis();
+      Log.d(TAG, "Found barcode in " + (end - start) + " ms");
       if (handler != null) {
-        Message message = Message.obtain(handler, IDS.id.decode_succeeded, result);
+        Message message = Message.obtain(handler, IDS.id.decode_succeeded, rawResult);
         Bundle bundle = new Bundle();
-        bundleThumbnail(source, bundle);
+        bundleThumbnail(source, bundle);        
         message.setData(bundle);
         message.sendToTarget();
       }
@@ -134,30 +107,6 @@ final class DecodeHandler extends Handler {
         message.sendToTarget();
       }
     }
-  }
-
-  public Result decode(BinaryBitmap image /*, Hashtable hints */) throws NotFoundException, ChecksumException, FormatException {
-    DecoderResult decoderResult;
-    ResultPoint[] points;
-//    if (hints != null && hints.containsKey(DecodeHintType.PURE_BARCODE)) {
-//      BitMatrix bits=extractPureBits(image.getBlackMatrix());
-//      decoderResult=decoder.decode(bits,hints);
-//      points=NO_POINTS;
-//    }
-//    else {
-      DetectorResult detectorResult=new Detector(image.getBlackMatrix()).detect(_hints);
-      decoderResult=decoder.decode(detectorResult.getBits(),_hints);
-      points=detectorResult.getPoints();
-//    }
-    Result result=new Result(decoderResult.getText(), decoderResult.getRawBytes(), points, BarcodeFormat.QR_CODE);
-    if (decoderResult.getByteSegments() != null) {
-      result.putMetadata(ResultMetadataType.BYTE_SEGMENTS,decoderResult.getByteSegments());
-    }
-    if (decoderResult.getECLevel() != null) {
-      result.putMetadata(ResultMetadataType.ERROR_CORRECTION_LEVEL,decoderResult.getECLevel().toString());
-    }
-
-    return result;
   }
 
   private static void bundleThumbnail(PlanarYUVLuminanceSource source, Bundle bundle) {
